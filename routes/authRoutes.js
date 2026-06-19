@@ -1,33 +1,23 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 const User = require("../models/Users");
 const authMiddleware = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-const otpStore = {};
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-  family: 4,
-});
+const otpStore = {};
 
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 async function sendOtpEmail(toEmail, otp) {
-  await transporter.sendMail({
-    from: `"VTU Admin" <${process.env.EMAIL_USER}>`,
+  const { error } = await resend.emails.send({
+    from: "VTU Admin <onboarding@resend.dev>", // Change to your domain email in production
     to: toEmail,
     subject: "Your Admin Login Code",
     html: `
@@ -45,6 +35,8 @@ async function sendOtpEmail(toEmail, otp) {
       </div>
     `,
   });
+
+  if (error) throw new Error(error.message);
 }
 
 // ─── SIGNUP ───────────────────────────────────────────────────────────────────
@@ -95,8 +87,7 @@ router.post("/login", async (req, res) => {
 
       console.log("=== ADMIN LOGIN DEBUG ===");
       console.log("ADMIN_EMAIL:", adminEmail);
-      console.log("EMAIL_USER:", process.env.EMAIL_USER);
-      console.log("EMAIL_PASS:", process.env.EMAIL_PASS ? "SET ✅" : "NOT SET ❌");
+      console.log("RESEND_API_KEY:", process.env.RESEND_API_KEY ? "SET ✅" : "NOT SET ❌");
       console.log("JWT_SECRET:", process.env.JWT_SECRET ? "SET ✅" : "NOT SET ❌");
       console.log("=========================");
 
@@ -104,8 +95,8 @@ router.post("/login", async (req, res) => {
         return res.status(500).json({ message: "Admin email not configured in .env" });
       }
 
-      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        return res.status(500).json({ message: "Email credentials not configured in .env" });
+      if (!process.env.RESEND_API_KEY) {
+        return res.status(500).json({ message: "RESEND_API_KEY not configured in .env" });
       }
 
       const otp = generateOtp();
