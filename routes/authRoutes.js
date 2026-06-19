@@ -11,6 +11,12 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 const otpStore = {};
 
+// A real bcryptjs hash always looks like $2a$12$..., $2b$12$..., etc.
+// Anything in `password` that doesn't match this is not a hash we created —
+// almost always a raw Google `sub` ID from an OAuth-created account.
+const BCRYPT_HASH_REGEX = /^\$2[aby]\$\d{2}\$/;
+const isLocalPassword = (password) => Boolean(password) && BCRYPT_HASH_REGEX.test(password);
+
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -39,6 +45,13 @@ async function sendOtpEmail(toEmail, otp) {
   if (error) throw new Error(error.message);
 }
 
+// Strip the password hash before a user object ever goes in a response.
+function sanitizeUser(user, isAdminOverride) {
+  const obj = user.toObject ? user.toObject() : { ...user._doc };
+  delete obj.password;
+  return { ...obj, isAdmin: isAdminOverride ?? Boolean(obj.isAdmin) };
+}
+
 // ─── SIGNUP ───────────────────────────────────────────────────────────────────
 router.post("/signup", async (req, res) => {
   try {
@@ -46,6 +59,14 @@ router.post("/signup", async (req, res) => {
 
     const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
+      // Fix: a Google-created account has a non-bcrypt value in `password`
+      // (or none at all, if you've updated /google to stop setting it).
+      // Give a useful message instead of a dead-end "already exists".
+      if (!isLocalPassword(existingUser.password)) {
+        return res.status(400).json({
+          message: "This email is already registered via Google Sign-In. Please log in with Google instead.",
+        });
+      }
       return res.status(400).json({ message: "User already exists" });
     }
 
@@ -59,7 +80,7 @@ router.post("/signup", async (req, res) => {
       isAdmin: false,
     });
 
-    return res.status(201).json({ message: "User created", user });
+    return res.status(201).json({ message: "User created", user: sanitizeUser(user) });
   } catch (err) {
     console.error("SIGNUP ERROR:", err);
     return res.status(500).json({ message: "Server error" });
@@ -76,8 +97,10 @@ router.post("/login", async (req, res) => {
 
     console.log("LOGIN ATTEMPT:", username);
 
-    const ADMIN_USER = "RICHSON-DATA-HUB";
-    const ADMIN_PASS = "RICHSON-DATA-HUB";
+    // ⚠️ These are hardcoded in source and identical to each other.
+    // Move to env vars and use a real, distinct password — see note above the file.
+    const ADMIN_USER = process.env.ADMIN_USERNAME || "RICHSON-DATA-HUB";
+    const ADMIN_PASS = process.env.ADMIN_PASSWORD || "RICHSON-DATA-HUB";
 
     if (
       username.toLowerCase() === ADMIN_USER.toLowerCase() &&
@@ -85,16 +108,9 @@ router.post("/login", async (req, res) => {
     ) {
       const adminEmail = process.env.ADMIN_EMAIL;
 
-      console.log("=== ADMIN LOGIN DEBUG ===");
-      console.log("ADMIN_EMAIL:", adminEmail);
-      console.log("RESEND_API_KEY:", process.env.RESEND_API_KEY ? "SET ✅" : "NOT SET ❌");
-      console.log("JWT_SECRET:", process.env.JWT_SECRET ? "SET ✅" : "NOT SET ❌");
-      console.log("=========================");
-
       if (!adminEmail) {
         return res.status(500).json({ message: "Admin email not configured in .env" });
       }
-
       if (!process.env.RESEND_API_KEY) {
         return res.status(500).json({ message: "RESEND_API_KEY not configured in .env" });
       }
@@ -115,9 +131,18 @@ router.post("/login", async (req, res) => {
     }
 
     // ── Normal user login ──
-    const user = await User.findOne({ username });
+    // Fix: match by username OR email, same as signup's duplicate check.
+    const user = await User.findOne({ $or: [{ username }, { email: username }] });
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    // Fix: catch Google-only accounts before attempting bcrypt.compare
+    // against a value that was never a bcrypt hash to begin with.
+    if (!isLocalPassword(user.password)) {
+      return res.status(400).json({
+        message: "This account uses Google Sign-In. Please log in with Google.",
+      });
     }
 
     const match = await bcrypt.compare(password, user.password);
@@ -135,7 +160,7 @@ router.post("/login", async (req, res) => {
     return res.json({
       message: "Login successful",
       token,
-      user: { ...user._doc, isAdmin },
+      user: sanitizeUser(user, isAdmin),
     });
   } catch (err) {
     console.error("LOGIN ERROR:", err);
@@ -169,7 +194,7 @@ router.post("/verify-admin-otp", async (req, res) => {
 
     delete otpStore[email];
 
-    const ADMIN_USER = "RICHSON-DATA-HUB";
+    const ADMIN_USER = process.env.ADMIN_USERNAME || "RICHSON-DATA-HUB";
     const token = jwt.sign(
       { id: "admin-static", username: ADMIN_USER, isAdmin: true },
       process.env.JWT_SECRET || "secretKey123",
