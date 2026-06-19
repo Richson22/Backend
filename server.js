@@ -22,6 +22,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       "http://localhost:5174",
+       "https://richsondatahub.vercel.app/",
     ],
     credentials: true,
   })
