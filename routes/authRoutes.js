@@ -218,6 +218,98 @@ router.post("/verify-admin-otp", async (req, res) => {
   }
 });
 
+// ─── FORGOT PASSWORD ──────────────────────────────────────────────────────────
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
+    const user = await User.findOne({ email: email.trim() });
+    if (!user) return res.status(400).json({ message: "No account found with that email" });
+
+    if (!isLocalPassword(user.password)) {
+      return res.status(400).json({ message: "This account uses Google Sign-In. Password reset is not available." });
+    }
+
+    const otp = generateOtp();
+    otpStore[email] = { otp, expiresAt: Date.now() + 5 * 60 * 1000 };
+
+    await resend.emails.send({
+      from: "VTU Admin <onboarding@resend.dev>",
+      to: email,
+      subject: "Your Password Reset Code",
+      html: `
+        <div style="font-family: sans-serif; max-width: 400px; margin: auto;">
+          <h2>Password Reset Code</h2>
+          <p>Use the code below to reset your password. It expires in <b>5 minutes</b>.</p>
+          <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px;
+                      padding: 16px; background: #f1f5f9; border-radius: 8px;
+                      text-align: center;">
+            ${otp}
+          </div>
+          <p style="color: #94a3b8; margin-top: 16px; font-size: 13px;">
+            If you didn't request this, ignore this email.
+          </p>
+        </div>
+      `,
+    });
+
+    return res.json({ message: "Reset code sent to your email" });
+  } catch (err) {
+    console.error("FORGOT PASSWORD ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ─── VERIFY RESET OTP ─────────────────────────────────────────────────────────
+router.post("/verify-reset-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) return res.status(400).json({ message: "Email and code are required" });
+
+    const record = otpStore[email];
+    if (!record) return res.status(400).json({ message: "No reset code found. Please request a new one." });
+    if (Date.now() > record.expiresAt) {
+      delete otpStore[email];
+      return res.status(400).json({ message: "Code has expired. Please request a new one." });
+    }
+    if (record.otp !== otp) return res.status(400).json({ message: "Invalid code" });
+
+    return res.json({ message: "Code verified" });
+  } catch (err) {
+    console.error("VERIFY RESET OTP ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ─── RESET PASSWORD ───────────────────────────────────────────────────────────
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const record = otpStore[email];
+    if (!record) return res.status(400).json({ message: "No reset code found. Please start over." });
+    if (Date.now() > record.expiresAt) {
+      delete otpStore[email];
+      return res.status(400).json({ message: "Code has expired. Please start over." });
+    }
+    if (record.otp !== otp) return res.status(400).json({ message: "Invalid code" });
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+    await User.findOneAndUpdate({ email: email.trim() }, { password: hashed });
+
+    delete otpStore[email];
+
+    return res.json({ message: "Password reset successfully" });
+  } catch (err) {
+    console.error("RESET PASSWORD ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
 // ─── PROFILE ──────────────────────────────────────────────────────────────────
 router.get("/profile", authMiddleware, async (req, res) => {
   const user = await User.findById(req.user.id).select("-password");
