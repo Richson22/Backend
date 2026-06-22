@@ -2,7 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const User = require("../models/Users");
 const Transaction = require("../models/Transaction");
-const authMiddleware = require("../middleware/authMiddleware"); // adjust path as needed
+const authMiddleware = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
@@ -16,9 +16,62 @@ const providerMap = {
   nabteb: "4",
 };
 
-// Collision-resistant ref generator (defined locally — no external dependency)
 const generateRef = () =>
   `EXAM_${Date.now()}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+
+
+// ── GET WAEC VARIATIONS ───────────────────────────────────────────────────────
+router.get("/waec-result/variations", async (req, res) => {
+  try {
+    return res.json({
+      variations: [
+        {
+          variation_code: "waecdirect",
+          name: "WAEC Result Checker PIN",
+          variation_amount: "3500", // ← update this to your actual price
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("WAEC VARIATIONS ERROR:", err);
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+
+// ── GET JAMB VARIATIONS ───────────────────────────────────────────────────────
+router.get("/jamb/variations", async (req, res) => {
+  try {
+    return res.json({
+      variations: [
+        {
+          variation_code: "de",
+          name: "JAMB Direct Entry PIN",
+          variation_amount: "3500", // ← update this to your actual price
+        },
+        {
+          variation_code: "utme-no-mock",
+          name: "JAMB UTME PIN (No Mock)",
+          variation_amount: "4700", // ← update this to your actual price
+        },
+        {
+          variation_code: "utme-mock",
+          name: "JAMB UTME + Mock PIN",
+          variation_amount: "5200", // ← update this to your actual price
+        },
+        {
+          variation_code: "mock",
+          name: "JAMB Mock PIN",
+          variation_amount: "2000", // ← update this to your actual price
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("JAMB VARIATIONS ERROR:", err);
+    return res.status(500).json({ message: err.message });
+  }
+});
+
 
 // ── BUY EXAM PINS (DALTECH) ───────────────────────────────────────────────────
 router.post("/daltech/buy", authMiddleware, async (req, res) => {
@@ -46,7 +99,6 @@ router.post("/daltech/buy", authMiddleware, async (req, res) => {
 
     // ── Pricing ───────────────────────────────────────────────────────────────
     // TODO: replace with a real price lookup from your DB/config
-    // Example: const pricePerPin = await ExamPinPrice.findOne({ provider: providerCode });
     const pricePerPin = 1000;
     const totalAmount = pricePerPin * qty;
 
@@ -71,7 +123,7 @@ router.post("/daltech/buy", authMiddleware, async (req, res) => {
     console.log("REF:", ref);
     console.log("=============================");
 
-    // ── Call Daltech API (GET with query params per their docs) ───────────────
+    // ── Call Daltech API ──────────────────────────────────────────────────────
     let daltechResponse;
     try {
       daltechResponse = await axios.get(DALTECH_BASE, {
@@ -134,7 +186,6 @@ router.post("/daltech/buy", authMiddleware, async (req, res) => {
         "CRITICAL: Transaction record failed after successful exam pin generation.",
         { ref, userId: user._id, error: dbErr.message }
       );
-      // Optionally: trigger an admin alert here
     }
 
     // ── Success ───────────────────────────────────────────────────────────────
