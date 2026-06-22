@@ -2,7 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const User = require("../models/Users");
 const Transaction = require("../models/Transaction");
-const authMiddleware = require("../middleware/auth"); // adjust path as needed
+const authMiddleware = require("../middleware/authMiddleware"); // adjust path as needed
 
 const router = express.Router();
 
