@@ -85,7 +85,7 @@ router.post("/buy", async (req, res) => {
       });
     } catch (apiErr) {
       // Daltech call itself failed — refund the wallet immediately
-      console.error("DALTECH API CALL FAILED:", apiErr.message);
+    console.error("DALTECH API CALL FAILED:", apiErr.message, JSON.stringify(apiErr.response?.data));
       await User.findByIdAndUpdate(user._id, {
         $inc: { walletBalance: totalCost },
       });
