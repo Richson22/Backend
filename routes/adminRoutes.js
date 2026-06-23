@@ -6,8 +6,9 @@ const Transaction = require("../models/Transaction");
 const ProfitLedger = require("../models/ProfitLedger");
 const authMiddleware = require("../middleware/authMiddleware");
 
-const router = express.Router();
 
+const router = express.Router();
+const ExamPrice = require("../models/ExamPrice");
 // ── Helper: ensure the requester is an admin ──
 function requireAdmin(req, res) {
   if (!req.user?.isAdmin) {
@@ -278,6 +279,41 @@ router.post("/withdraw-profit", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("WITHDRAW PROFIT ERROR:", err);
     return res.status(500).json({ message: err.message || "Server error" });
+  }
+});
+
+// ─── GET ALL EXAM PRICES ─────────────────────────────────────
+// GET /api/admin/exam-prices
+router.get("/exam-prices", async (req, res) => {
+  try {
+    const prices = await ExamPrice.find();
+    res.json(prices);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── SET / UPDATE AN EXAM PRICE ──────────────────────────────
+// POST /api/admin/exam-prices
+// Body: { service: "waec", price: 3500 }
+router.post("/exam-prices", authMiddleware, async (req, res) => {
+  try {
+    if (!requireAdmin(req, res)) return;
+
+    const { service, price } = req.body;
+    if (!service || price === undefined) {
+      return res.status(400).json({ message: "service and price are required" });
+    }
+
+    const updated = await ExamPrice.findOneAndUpdate(
+      { service: service.toLowerCase() },
+      { price: Number(price) },
+      { upsert: true, new: true }
+    );
+
+    res.json({ message: "Price updated", updated });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

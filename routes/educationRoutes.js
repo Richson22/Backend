@@ -5,6 +5,26 @@ const Transaction = require("../models/Transaction");
 const authMiddleware = require("../middleware/authMiddleware");
 
 const router = express.Router();
+const ExamPrice = require("../models/ExamPrice");
+
+const defaultPrices = {
+  waec:           3500,
+  neco:           3500,
+  jamb_de:        3500,
+  jamb_utme_only: 4700,
+  jamb_utme_mock: 5200,
+  jamb_mock:      2000,
+  nabteb:         3500,
+};
+
+async function getPrice(service) {
+  try {
+    const record = await ExamPrice.findOne({ service: service.toLowerCase() });
+    return record ? record.price : defaultPrices[service] || 0;
+  } catch {
+    return defaultPrices[service] || 0;
+  }
+}
 
 const DALTECH_BASE = "https://daltechsubapi.com.ng/api/exampin/";
 const DALTECH_TOKEN = process.env.DALTECH_TOKEN;
@@ -16,6 +36,7 @@ const providerMap = {
   nabteb: "4",
 };
 
+// prices now come from DB via getPrice()
 const generateRef = () =>
   `EXAM_${Date.now()}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
 
@@ -23,12 +44,13 @@ const generateRef = () =>
 // ── GET WAEC VARIATIONS ───────────────────────────────────────────────────────
 router.get("/waec-result/variations", async (req, res) => {
   try {
+    const price = await getPrice("waec");
     return res.json({
       variations: [
         {
           variation_code: "waecdirect",
           name: "WAEC Result Checker PIN",
-          variation_amount: "3500", // ← update this to your actual price
+          variation_amount: String(price),
         },
       ],
     });
@@ -42,28 +64,18 @@ router.get("/waec-result/variations", async (req, res) => {
 // ── GET JAMB VARIATIONS ───────────────────────────────────────────────────────
 router.get("/jamb/variations", async (req, res) => {
   try {
+    const [de, utme, utmeMock, mock] = await Promise.all([
+      getPrice("jamb_de"),
+      getPrice("jamb_utme_only"),
+      getPrice("jamb_utme_mock"),
+      getPrice("jamb_mock"),
+    ]);
     return res.json({
       variations: [
-        {
-          variation_code: "de",
-          name: "JAMB Direct Entry PIN",
-          variation_amount: "3500", // ← update this to your actual price
-        },
-        {
-          variation_code: "utme-no-mock",
-          name: "JAMB UTME PIN (No Mock)",
-          variation_amount: "4700", // ← update this to your actual price
-        },
-        {
-          variation_code: "utme-mock",
-          name: "JAMB UTME + Mock PIN",
-          variation_amount: "5200", // ← update this to your actual price
-        },
-        {
-          variation_code: "mock",
-          name: "JAMB Mock PIN",
-          variation_amount: "2000", // ← update this to your actual price
-        },
+        { variation_code: "de",           name: "JAMB Direct Entry PIN",    variation_amount: String(de) },
+        { variation_code: "utme-no-mock", name: "JAMB UTME PIN (No Mock)",  variation_amount: String(utme) },
+        { variation_code: "utme-mock",    name: "JAMB UTME + Mock PIN",     variation_amount: String(utmeMock) },
+        { variation_code: "mock",         name: "JAMB Mock PIN",            variation_amount: String(mock) },
       ],
     });
   } catch (err) {
@@ -99,8 +111,7 @@ router.post("/daltech/buy", authMiddleware, async (req, res) => {
 
     // ── Pricing ───────────────────────────────────────────────────────────────
     // TODO: replace with a real price lookup from your DB/config
-    const pricePerPin = 1000;
-    const totalAmount = pricePerPin * qty;
+  const pricePerPin = await getPrice(provider.toLowerCase());
 
     // ── Atomic balance deduction (prevents double-spend race condition) ────────
     const user = await User.findOneAndUpdate(
