@@ -38,6 +38,7 @@ app.use("/api/transactions", transactionRoutes);
 app.use("/api/education", educationRoutes);
 app.use("/api/electricity", electricityRoutes);
 app.use("/api/otp", otpRoutes);
+app.use("/api/rechargepin", rechargePinRoutes);
 app.use("/api/auth/google", googleAuthRoutes); 
 
 app.get("/", (req, res) => {
