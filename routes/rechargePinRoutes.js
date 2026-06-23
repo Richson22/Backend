@@ -73,16 +73,15 @@ router.post("/buy", async (req, res) => {
     // ── Call Daltech API (GET with query params per their docs) ──────────────
     let daltechResponse;
     try {
-      daltechResponse = await axios.get(BASE_URL, {
-        params: {
+     daltechResponse = await axios.post(BASE_URL, {
           network: networkCode,
           quantity: String(qty),
           plan: String(plan),
           businessname: businessname || "Richson Data Hub",
           ref,
-        },
-        headers: { Authorization: `Token ${DALTECH_TOKEN}` },
-      });
+        }, {
+          headers: { Authorization: `Token ${DALTECH_TOKEN}` },
+        });
     } catch (apiErr) {
       // Daltech call itself failed — refund the wallet immediately
     console.error("DALTECH API CALL FAILED:", apiErr.message, JSON.stringify(apiErr.response?.data));
