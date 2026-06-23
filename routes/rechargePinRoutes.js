@@ -15,6 +15,12 @@ const networkMap = {
   airtel: "4",
 };
 
+const planMap = {
+  mtn:       { 100: "1",   200: "2",   500: "3",   1000: "4"   },
+  glo:       { 100: "145", 200: "146", 500: "147",  1000: "148" },
+  "9mobile": { 100: "149", 200: "150", 500: "151",  1000: "152" },
+  airtel:    { 100: "153", 200: "154", 500: "155",  1000: "156" },
+};
 // More collision-resistant ref generator
 const generateRef = () =>
   `EPIN_${Date.now()}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
@@ -36,15 +42,20 @@ router.post("/buy", async (req, res) => {
         .json({ message: "Quantity must be a whole number between 1 and 100" });
     }
 
-    const networkCode = networkMap[network.toLowerCase()];
+   const networkCode = networkMap[network.toLowerCase()];
     if (!networkCode) {
       return res.status(400).json({ message: "Invalid network" });
+    }
+
+    const planId = planMap[network.toLowerCase()]?.[Number(plan)];
+    if (!planId) {
+      return res.status(400).json({ message: "Invalid plan for this network" });
     }
 
     // ── Pricing ─────────────────────────────────────────────────────────────
     // TODO: Replace with a real plan-price lookup from your DB/config.
     // Example: const pinPrice = await PlanPrice.findOne({ network: networkCode, plan });
-    const pinPrice = 100;
+    const pinPrice = Number(plan);
     const totalCost = pinPrice * qty;
 
     // ── Atomic balance deduction (prevents double-spend race condition) ──────
@@ -76,7 +87,7 @@ router.post("/buy", async (req, res) => {
      daltechResponse = await axios.post(BASE_URL, {
           network: networkCode,
           quantity: String(qty),
-          plan: String(plan),
+          plan: planId,
           businessname: businessname || "Richson Data Hub",
           ref,
         }, {
